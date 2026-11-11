@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTomorrowDateStr } from "@/lib/dates";
-import { parseTasksFromBrainDump } from "@/lib/ai";
-import { insertTasks, recordEveningReply } from "@/lib/db";
-import { sendReplyConfirmationEmail } from "@/lib/email";
+import { getTodayDateStr, getTomorrowDateStr } from "@/lib/dates";
+import { parseEmailReply } from "@/lib/ai";
+import {
+  getTasksForDate,
+  insertTasks,
+  markTasksDoneByTitles,
+  recordEveningReply,
+} from "@/lib/db";
+import { getResendClient, sendReplyConfirmationEmail } from "@/lib/email";
 
 // Allow time for Gemini model fallbacks (Vercel function max duration, seconds).
 export const maxDuration = 60;
@@ -31,7 +36,7 @@ export async function POST(req: NextRequest) {
   try {
     const payload = await req.json();
 
-    // Support both Resend's `email.received` webhook structure and direct inbound JSON payloads
+    // 1. Extract email_id and direct fields
     const data = payload?.data || payload;
     let rawReplyText: string =
       data?.text ||
@@ -40,21 +45,42 @@ export async function POST(req: NextRequest) {
       data?.replyText ||
       "";
 
-    // If Resend sent an email.received event with only an email_id and RESEND_API_KEY is configured,
-    // fetch the inbound email content from Resend API if text wasn't in the webhook body
-    if (!rawReplyText && data?.email_id && process.env.RESEND_API_KEY) {
+    const emailId: string | undefined = data?.email_id || payload?.email_id;
+    let senderEmail: string | undefined =
+      typeof data?.from === "string" ? data.from : data?.from?.email;
+
+    // 2. If inbound from Resend Receiving webhook (email.received), fetch the email text
+    if (!rawReplyText && emailId && process.env.RESEND_API_KEY) {
       try {
-        const res = await fetch(`https://api.resend.com/emails/receiving/${data.email_id}`, {
-          headers: {
-            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-          },
-        });
-        if (res.ok) {
-          const emailData = await res.json();
-          rawReplyText = emailData.text || emailData.html || "";
+        const resend = getResendClient();
+        if (resend) {
+          const { data: receivingData, error: receivingError } =
+            await resend.emails.receiving.get(emailId);
+          if (!receivingError && receivingData) {
+            rawReplyText = receivingData.text || receivingData.html || "";
+            if (!senderEmail && receivingData.from) {
+              senderEmail = receivingData.from;
+            }
+          }
         }
-      } catch (e) {
-        console.error("Failed to fetch inbound email body from Resend:", e);
+      } catch (err) {
+        console.error("Resend receiving.get SDK call failed, attempting direct fetch:", err);
+        try {
+          const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, {
+            headers: {
+              Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+            },
+          });
+          if (res.ok) {
+            const emailData = await res.json();
+            rawReplyText = emailData.text || emailData.html || "";
+            if (!senderEmail && emailData.from) {
+              senderEmail = emailData.from;
+            }
+          }
+        } catch (fetchErr) {
+          console.error("Direct fetch for receiving email failed:", fetchErr);
+        }
       }
     }
 
@@ -66,32 +92,45 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const targetDate: string = data?.targetDate || getTomorrowDateStr();
-    const senderEmail: string | undefined =
-      typeof data?.from === "string" ? data.from : data?.from?.email;
+    const today = getTodayDateStr();
+    const tomorrow = data?.targetDate || getTomorrowDateStr();
 
-    // 1. Parse natural language reply into structured tasks with 2-minute starter steps
-    const parsedBundle = await parseTasksFromBrainDump(cleanedText, targetDate);
+    // 3. Fetch today's tasks so Gemini can match what was completed
+    const todayTasks = await getTasksForDate(today);
 
-    // 2. Save tasks to Supabase for tomorrow
-    const savedTasks = await insertTasks(parsedBundle.tasks, targetDate, "email_reply");
+    // 4. Parse completed tasks and tomorrow's new tasks with Gemini
+    const parsed = await parseEmailReply(cleanedText, todayTasks, tomorrow);
 
-    // 3. Record raw reply in daily_briefs
-    await recordEveningReply(targetDate, cleanedText);
+    // 5. Mark completed tasks as DONE in the database
+    const completedTasks = await markTasksDoneByTitles(today, parsed.completed_task_titles);
+    const completedTitles = completedTasks.map((t) => t.title);
 
-    // 4. Send confirmation email via Resend
+    // 6. Insert tomorrow's new tasks into the database
+    const createdTomorrowTasks = await insertTasks(
+      parsed.tomorrow_tasks,
+      tomorrow,
+      "email_reply"
+    );
+
+    // 7. Record raw evening reply
+    await recordEveningReply(today, cleanedText);
+
+    // 8. Send short confirmation email via Resend
     const confirmationEmail = await sendReplyConfirmationEmail({
       toEmail: senderEmail,
-      tomorrowDateStr: targetDate,
-      coachingNote: parsedBundle.coaching_note,
-      tasks: parsedBundle.tasks,
+      tomorrowDateStr: tomorrow,
+      completedTasks: completedTitles,
+      tomorrowTasks: createdTomorrowTasks,
+      summaryMessage: parsed.summary_message,
     });
 
     return NextResponse.json({
       ok: true,
-      targetDate,
-      coachingNote: parsedBundle.coaching_note,
-      tasksCreated: savedTasks,
+      today,
+      tomorrow,
+      completedTasks: completedTitles,
+      tomorrowTasks: createdTomorrowTasks,
+      summaryMessage: parsed.summary_message,
       confirmationEmail,
     });
   } catch (error) {

@@ -6,8 +6,8 @@ export interface Task {
   id: string;
   title: string;
   notes?: string | null;
-  starter_step: string;
-  estimated_minutes: number;
+  starter_step?: string;
+  estimated_minutes?: number;
   priority: TaskPriority;
   scheduled_for: string; // YYYY-MM-DD
   status: TaskStatus;
@@ -16,21 +16,15 @@ export interface Task {
   completed_at?: string | null;
 }
 
-export interface ScheduleBlock {
-  time_slot: string;
-  task_title: string;
-  duration_minutes: number;
-  priority: TaskPriority;
-  starter_step: string;
-  why_it_matters: string;
-}
-
 export interface MorningPlan {
   subject: string;
   greeting: string;
-  frog_of_the_day: string;
-  lazy_hack: string;
-  schedule: ScheduleBlock[];
+  tasks: Array<{
+    title: string;
+    notes?: string;
+    priority?: TaskPriority;
+  }>;
+  reminder_footer: string;
 }
 
 export interface DailyBrief {
@@ -38,9 +32,6 @@ export interface DailyBrief {
   brief_date: string;
   subject: string | null;
   greeting: string | null;
-  frog_of_the_day: string | null;
-  lazy_hack: string | null;
-  schedule_json: ScheduleBlock[];
   morning_email_id?: string | null;
   morning_sent_at?: string | null;
   evening_email_id?: string | null;
@@ -53,12 +44,13 @@ export interface DailyBrief {
 export interface ParsedTaskInput {
   title: string;
   notes?: string;
-  starter_step: string;
-  estimated_minutes: number;
-  priority: TaskPriority;
+  priority?: TaskPriority;
+  starter_step?: string;
+  estimated_minutes?: number;
 }
 
-export interface ParsedTaskBundle {
-  coaching_note: string;
-  tasks: ParsedTaskInput[];
+export interface ParsedEmailReply {
+  completed_task_titles: string[];
+  tomorrow_tasks: ParsedTaskInput[];
+  summary_message: string;
 }

@@ -336,6 +336,18 @@ body {
   font-family: var(--font-mono), monospace;
 }
 
+.badge-done {
+  background: var(--accent-emerald-soft);
+  color: var(--accent-emerald);
+  border: 1px solid #BBF7D0;
+}
+
+.badge-pending {
+  background: var(--surface-subtle);
+  color: var(--ink-secondary);
+  border: 1px solid var(--rule-line);
+}
+
 .badge-high {
   background: #DBEAFE;
   color: #1D4ED8;

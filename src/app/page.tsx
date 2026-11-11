@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useId, useRef, useState } from "react";
-import type { DailyBrief, Task, TaskStatus } from "@/lib/types";
+import type { DailyBrief, Task } from "@/lib/types";
 
 interface DashboardState {
   today: string;
@@ -28,10 +28,9 @@ interface EmailModalData {
 export default function RemindAIDeskPage() {
   const [data, setData] = useState<DashboardState | null>(null);
   const [loading, setLoading] = useState(true);
-  const [brainDump, setBrainDump] = useState("");
-  const [brainDumpEdited, setBrainDumpEdited] = useState(false);
-  const [brainDumpError, setBrainDumpError] = useState("");
-  const [targetDay, setTargetDay] = useState<"tomorrow" | "today">("tomorrow");
+  const [replyText, setReplyText] = useState("");
+  const [replyTextEdited, setReplyTextEdited] = useState(false);
+  const [replyTextError, setReplyTextError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [dispatching, setDispatching] = useState<"morning" | "evening" | null>(null);
   const [statusMessage, setStatusMessage] = useState<string>("");
@@ -41,9 +40,9 @@ export default function RemindAIDeskPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  const brainDumpId = useId();
-  const brainDumpHintId = useId();
-  const brainDumpErrorId = useId();
+  const replyInputId = useId();
+  const replyHintId = useId();
+  const replyErrorId = useId();
 
   async function fetchDashboard() {
     try {
@@ -82,24 +81,24 @@ export default function RemindAIDeskPage() {
   }
 
   function handleTextareaBlur() {
-    if (brainDumpEdited && brainDump.trim().length > 0 && brainDump.trim().length < 4) {
-      setBrainDumpError("Please describe at least one task (4+ characters).");
+    if (replyTextEdited && replyText.trim().length > 0 && replyText.trim().length < 4) {
+      setReplyTextError("Please enter your message (at least 4 characters).");
     }
   }
 
   function handleTextareaInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setBrainDump(e.target.value);
-    setBrainDumpEdited(true);
-    if (brainDumpError) {
-      setBrainDumpError("");
+    setReplyText(e.target.value);
+    setReplyTextEdited(true);
+    if (replyTextError) {
+      setReplyTextError("");
     }
   }
 
-  async function handleBrainDumpSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleReplySubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const trimmed = brainDump.trim();
+    const trimmed = replyText.trim();
     if (trimmed.length < 4) {
-      setBrainDumpError("Please enter what you need to do (at least 4 characters).");
+      setReplyTextError("Please enter what you did today and what you need for tomorrow.");
       textareaRef.current?.focus();
       return;
     }
@@ -107,47 +106,33 @@ export default function RemindAIDeskPage() {
     setSubmitting(true);
     setStatusMessage("");
     try {
-      // If targetDay is tomorrow, we can route through the Resend Inbound Webhook simulator
-      // or /api/tasks so the exact same Gemini parsing + 2-minute starter step pipeline runs
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          brainDump: trimmed,
-          targetDay,
-          source: targetDay === "tomorrow" ? "email_reply" : "web",
+          replyText: trimmed,
+          source: "web",
         }),
       });
       const json = await res.json();
       if (json.ok) {
-        setBrainDump("");
-        setBrainDumpEdited(false);
-        setStatusMessage(
-          json.coachingNote ||
-            `Queued ${json.tasks?.length || 1} task(s) for ${targetDay}.`
-        );
+        setReplyText("");
+        setReplyTextEdited(false);
+        const details = [
+          json.summaryMessage,
+          json.completedTasks?.length ? `Marked done: ${json.completedTasks.join(", ")}` : null,
+          json.tomorrowTasks?.length ? `Queued ${json.tomorrowTasks.length} task(s) for tomorrow.` : null,
+        ].filter(Boolean).join(" | ");
+
+        setStatusMessage(details || "Updated successfully!");
         await fetchDashboard();
       } else {
-        setBrainDumpError(json.error || "Could not parse tasks.");
+        setReplyTextError(json.error || "Could not process reply.");
       }
     } catch {
-      setBrainDumpError("Network error while saving tasks.");
+      setReplyTextError("Network error while submitting reply.");
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function handleToggleTask(task: Task) {
-    const nextStatus: TaskStatus = task.status === "done" ? "pending" : "done";
-    try {
-      await fetch("/api/tasks", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: task.id, status: nextStatus }),
-      });
-      await fetchDashboard();
-    } catch (e) {
-      console.error("Failed to toggle task:", e);
     }
   }
 
@@ -179,9 +164,10 @@ export default function RemindAIDeskPage() {
           : json.email.mode === "resend_live"
             ? `Dispatched via Resend to ${json.email.to}`
             : `Generated email preview (set RESEND_API_KEY in .env.local to send live emails)`;
+
         setStatusMessage(modeLabel);
         openEmailPreviewModal({
-          title: kind === "morning" ? "Morning Action Plan Email" : "Evening Check-in Email",
+          title: kind === "morning" ? "Morning Tasks Reminder Email" : "Evening Check-in Email",
           subject: json.email.subject,
           to: json.email.to,
           mode: json.email.mode,
@@ -205,9 +191,9 @@ export default function RemindAIDeskPage() {
     <div className="desk-container">
       <header className="desk-header">
         <div>
-          <h1 className="brand-title">RemindAI Dispatch Desk</h1>
+          <h1 className="brand-title">RemindAI Agent</h1>
           <p className="brand-subtitle">
-            Your anti-procrastination daily agent: sends a 2-minute-starter action plan every morning at 08:00 and asks what&apos;s on deck for tomorrow every evening at 20:00.
+            Simple daily task reminders via email. Every morning at 8:00 AM you receive today&apos;s tasks. Every evening at 8:00 PM you receive a check-in — just reply with what you finished and what you need for tomorrow!
           </p>
         </div>
 
@@ -218,9 +204,7 @@ export default function RemindAIDeskPage() {
             disabled={dispatching !== null}
             onClick={() => handleTriggerEmail("morning")}
           >
-            {dispatching === "morning"
-              ? "Generating Morning Plan..."
-              : "Send Morning Plan Email"}
+            {dispatching === "morning" ? "Sending Morning Email..." : "Send Morning Email Now"}
           </button>
           <button
             type="button"
@@ -228,14 +212,12 @@ export default function RemindAIDeskPage() {
             disabled={dispatching !== null}
             onClick={() => handleTriggerEmail("evening")}
           >
-            {dispatching === "evening"
-              ? "Sending Evening Check-in..."
-              : "Send Evening Check-in Email"}
+            {dispatching === "evening" ? "Sending Evening Check-in..." : "Send Evening Check-in Now"}
           </button>
         </div>
       </header>
 
-      {/* Integration & Cron Telemetry Bar */}
+      {/* Integration Telemetry Bar */}
       <aside className="status-strip" aria-label="Service connection status">
         <div className="status-pills">
           <span>
@@ -243,8 +225,8 @@ export default function RemindAIDeskPage() {
               className={`status-dot ${data?.integrations.gemini ? "dot-live" : "dot-local"}`}
               aria-hidden="true"
             />
-            <strong>Gemini 3.8 Flash:</strong>{" "}
-            {data?.integrations.gemini ? "Connected" : "Fallback Heuristic Mode"}
+            <strong>Gemini AI:</strong>{" "}
+            {data?.integrations.gemini ? "Connected (Flash-Lite)" : "Fallback Mode"}
           </span>
           <span>
             <span
@@ -262,13 +244,13 @@ export default function RemindAIDeskPage() {
               aria-hidden="true"
             />
             <strong>Supabase DB:</strong>{" "}
-            {data?.integrations.supabase ? "Connected" : "Local Store (.remindai-store.json)"}
+            {data?.integrations.supabase ? "Connected" : "Local Store"}
           </span>
         </div>
-        <span className="mono-tag">CRON: 08:00 AM / 08:00 PM</span>
+        <span className="mono-tag">EMAIL LOOP: 08:00 AM &middot; 08:00 PM</span>
       </aside>
 
-      {/* Accessible Live Feedback Banner */}
+      {/* Live Feedback Toast */}
       <div role="status" aria-live="polite">
         {statusMessage && (
           <div className="toast-banner">
@@ -285,181 +267,114 @@ export default function RemindAIDeskPage() {
       </div>
 
       <main className="desk-grid">
-        {/* LEFT COLUMN: Today's Morning Plan & Active Task Ledger */}
+        {/* LEFT COLUMN: Today's Tasks */}
         <section className="ledger-sheet" aria-labelledby="today-heading">
           <div className="sheet-heading-row">
             <h2 id="today-heading" className="sheet-title">
-              Today&apos;s Gameplan
+              Today&apos;s Tasks
             </h2>
             <span className="mono-tag">
-              {data?.today || "Loading..."} &middot; {doneCount}/{todayTasks.length} Done
+              {data?.today || "Today"} &middot; {doneCount}/{todayTasks.length} Done
             </span>
           </div>
 
-          {data?.brief && (
-            <div className="frog-box">
-              <div className="frog-label">
-                #1 FROG OF THE DAY (DO THIS FIRST)
-              </div>
-              <p className="frog-text">{data.brief.frog_of_the_day}</p>
-              {data.brief.lazy_hack && (
-                <p className="hack-note">
-                  <strong>Lazy-Brain Trick:</strong> {data.brief.lazy_hack}
-                </p>
-              )}
-            </div>
-          )}
+          <p className="form-hint" style={{ marginBottom: "1.25rem" }}>
+            No need to manually check off tasks here. Simply reply to your evening check-in email with what you completed, and RemindAI marks them done automatically!
+          </p>
 
           {loading ? (
-            <p>Loading today&apos;s tasks...</p>
+            <p>Loading tasks...</p>
           ) : todayTasks.length === 0 ? (
             <p className="form-hint">
-              No tasks scheduled for today yet. Use the form on the right to brain-dump tasks for today or tomorrow.
+              No tasks scheduled for today yet. Use the reply box on the right or reply to your email to queue tasks.
             </p>
           ) : (
             <ul className="task-list">
-              {todayTasks.map((task) => {
-                const checkboxId = `task-check-${task.id}`;
-                return (
-                  <li key={task.id} className="task-item">
-                    <input
-                      id={checkboxId}
-                      type="checkbox"
-                      className="task-checkbox"
-                      checked={task.status === "done"}
-                      onChange={() => handleToggleTask(task)}
-                    />
-                    <div>
-                      <label
-                        htmlFor={checkboxId}
-                        className={`task-title ${task.status === "done" ? "task-title-done" : ""}`}
-                      >
-                        {task.title}
-                      </label>
-                      <div className="starter-pill">
-                        <strong>2-Min Starter:</strong> {task.starter_step}
-                      </div>
-                      <div className="task-meta">
-                        <span className={`badge badge-${task.priority}`}>
-                          {task.priority.toUpperCase()}
-                        </span>
-                        <span>~{task.estimated_minutes} min</span>
-                        <span>Source: {task.source}</span>
-                      </div>
+              {todayTasks.map((task) => (
+                <li key={task.id} className="task-item">
+                  <span
+                    className={`badge ${task.status === "done" ? "badge-done" : "badge-pending"}`}
+                    style={{ marginTop: "0.2rem" }}
+                  >
+                    {task.status === "done" ? "Done" : "Pending"}
+                  </span>
+                  <div>
+                    <div className={`task-title ${task.status === "done" ? "task-title-done" : ""}`}>
+                      {task.title}
                     </div>
-                    <button
-                      type="button"
-                      className="btn"
-                      aria-label={`Remove task ${task.title}`}
-                      onClick={() => handleDeleteTask(task.id)}
-                    >
-                      Remove
-                    </button>
-                  </li>
-                );
-              })}
+                    {task.notes && (
+                      <div className="form-hint" style={{ marginTop: "0.2rem" }}>
+                        {task.notes}
+                      </div>
+                    )}
+                    <div className="task-meta">
+                      <span className={`badge badge-${task.priority}`}>
+                        {task.priority.toUpperCase()}
+                      </span>
+                      <span>Source: {task.source}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn"
+                    aria-label={`Remove task ${task.title}`}
+                    onClick={() => handleDeleteTask(task.id)}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
             </ul>
-          )}
-
-          {data?.brief?.schedule_json && data.brief.schedule_json.length > 0 && (
-            <details style={{ marginTop: "1.5rem" }}>
-              <summary style={{ fontWeight: 600, cursor: "pointer" }}>
-                View AI Time-Blocked Schedule ({data.brief.schedule_json.length} blocks)
-              </summary>
-              <ol className="schedule-list">
-                {data.brief.schedule_json.map((slot, idx) => (
-                  <li key={idx} className="schedule-row">
-                    <span className="mono-tag">{slot.time_slot}</span>
-                    <div>
-                      <strong>{slot.task_title}</strong> ({slot.duration_minutes}m)
-                      <div className="form-hint">{slot.why_it_matters}</div>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </details>
           )}
         </section>
 
-        {/* RIGHT COLUMN: Evening Reply Simulator + Tomorrow's Queue */}
+        {/* RIGHT COLUMN: Reply / Quick Update + Tomorrow's Queue */}
         <section
           className="ledger-sheet ledger-sheet-evening"
-          aria-labelledby="tomorrow-heading"
+          aria-labelledby="reply-heading"
         >
           <div className="sheet-heading-row">
-            <h2 id="tomorrow-heading" className="sheet-title">
-              Evening Check-in &amp; Tomorrow Queue
+            <h2 id="reply-heading" className="sheet-title">
+              Reply &amp; Set Tomorrow
             </h2>
-            <span className="mono-tag">{data?.tomorrow || "Tomorrow"}</span>
+            <span className="mono-tag">Tomorrow: {data?.tomorrow || "Next Day"}</span>
           </div>
 
           <form
             ref={formRef}
-            onSubmit={handleBrainDumpSubmit}
-            aria-labelledby="tomorrow-heading"
+            onSubmit={handleReplySubmit}
+            aria-labelledby="reply-heading"
             noValidate
           >
-            <fieldset className="radio-fieldset">
-              <legend className="radio-legend">Schedule tasks for</legend>
-              <div className="radio-group">
-                <span className="radio-option">
-                  <input
-                    type="radio"
-                    id="target-tomorrow"
-                    name="targetDay"
-                    value="tomorrow"
-                    checked={targetDay === "tomorrow"}
-                    onChange={() => setTargetDay("tomorrow")}
-                  />
-                  <label htmlFor="target-tomorrow">
-                    Tomorrow ({data?.tomorrow || "Next Day"})
-                  </label>
-                </span>
-                <span className="radio-option">
-                  <input
-                    type="radio"
-                    id="target-today"
-                    name="targetDay"
-                    value="today"
-                    checked={targetDay === "today"}
-                    onChange={() => setTargetDay("today")}
-                  />
-                  <label htmlFor="target-today">
-                    Today ({data?.today || "Today"})
-                  </label>
-                </span>
-              </div>
-            </fieldset>
-
             <div className="form-group">
-              <label htmlFor={brainDumpId} className="form-label">
-                What do you need to get done? (Natural language or email reply)
+              <label htmlFor={replyInputId} className="form-label">
+                Reply with what you finished &amp; what you need tomorrow:
               </label>
-              <span id={brainDumpHintId} className="form-hint">
-                Type casually like replying to the 8 PM email. Press Enter to submit (Shift+Enter for new line). Gemini will break it down into 2-minute starter steps.
+              <span id={replyHintId} className="form-hint">
+                Type naturally like replying to the evening email. Press Enter to submit (Shift+Enter for a new line).
               </span>
               <textarea
                 ref={textareaRef}
-                id={brainDumpId}
-                name="brainDump"
+                id={replyInputId}
+                name="replyText"
                 className="form-textarea"
                 required
                 minLength={4}
-                aria-invalid={brainDumpError ? "true" : undefined}
+                aria-invalid={replyTextError ? "true" : undefined}
                 aria-describedby={
-                  brainDumpError
-                    ? `${brainDumpHintId} ${brainDumpErrorId}`
-                    : brainDumpHintId
+                  replyTextError
+                    ? `${replyHintId} ${replyErrorId}`
+                    : replyHintId
                 }
-                placeholder="e.g., Tomorrow I need to finish the API slides before 11am, call the dentist, and clean up my Git branches..."
-                value={brainDump}
+                placeholder="e.g., I finished writing the report and called the dentist. Tomorrow I need to review pull requests and buy train tickets..."
+                value={replyText}
                 onChange={handleTextareaInput}
                 onBlur={handleTextareaBlur}
                 onKeyDown={handleTextareaKeyDown}
               />
-              {brainDumpError && (
-                <span id={brainDumpErrorId} className="error-msg" role="alert">
-                  {brainDumpError}
+              {replyTextError && (
+                <span id={replyErrorId} className="error-msg" role="alert">
+                  {replyTextError}
                 </span>
               )}
             </div>
@@ -470,9 +385,7 @@ export default function RemindAIDeskPage() {
               disabled={submitting}
               style={{ width: "100%", justifyContent: "center" }}
             >
-              {submitting
-                ? "Gemini is breaking tasks into 2-minute steps..."
-                : `Parse & Queue Tasks for ${targetDay === "tomorrow" ? "Tomorrow" : "Today"}`}
+              {submitting ? "Gemini is updating tasks..." : "Process Reply & Update Tasks"}
             </button>
           </form>
 
@@ -490,7 +403,7 @@ export default function RemindAIDeskPage() {
 
           {tomorrowTasks.length === 0 ? (
             <p className="form-hint">
-              Nothing queued for tomorrow yet. Reply to tonight&apos;s check-in email or type above!
+              Nothing queued for tomorrow yet. Type above or reply to tonight&apos;s check-in email!
             </p>
           ) : (
             <ul className="task-list">
@@ -504,12 +417,13 @@ export default function RemindAIDeskPage() {
                   </span>
                   <div>
                     <div className="task-title">{task.title}</div>
-                    <div className="starter-pill">
-                      <strong>2-Min Starter:</strong> {task.starter_step}
-                    </div>
+                    {task.notes && (
+                      <div className="form-hint" style={{ marginTop: "0.2rem" }}>
+                        {task.notes}
+                      </div>
+                    )}
                     <div className="task-meta">
-                      <span>~{task.estimated_minutes} min</span>
-                      <span>via {task.source}</span>
+                      <span>Source: {task.source}</span>
                     </div>
                   </div>
                   <button
@@ -527,7 +441,7 @@ export default function RemindAIDeskPage() {
         </section>
       </main>
 
-      {/* Native Modal Dialog for Inspecting Dispatched Email HTML */}
+      {/* Modal Dialog for Inspecting Dispatched Email */}
       <dialog
         ref={dialogRef}
         className="email-dialog"

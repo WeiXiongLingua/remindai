@@ -5,7 +5,7 @@ import {
   rolloverUnfinishedTasks,
   upsertMorningBrief,
 } from "@/lib/db";
-import { generateMorningActionPlan } from "@/lib/ai";
+import { generateMorningPlan } from "@/lib/ai";
 import { sendMorningPlanEmail } from "@/lib/email";
 
 // Allow time for Gemini model fallbacks (Vercel function max duration, seconds).
@@ -36,10 +36,10 @@ async function handleMorningDispatch(req: NextRequest) {
     // 2. Fetch all tasks scheduled for today
     const todayTasks = await getTasksForDate(today);
 
-    // 3. Ask Gemini 3.8 Flash to build a step-by-step anti-procrastination morning plan
-    const plan = await generateMorningActionPlan(todayTasks, today);
+    // 3. Generate a clean, simple morning plan
+    const plan = await generateMorningPlan(todayTasks, today);
 
-    // 4. Send the Morning Dispatch email via Resend
+    // 4. Send the Morning email via Resend
     const emailResult = await sendMorningPlanEmail({
       dateStr: today,
       plan,

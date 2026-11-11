@@ -58,8 +58,6 @@ function createInitialSeedStore(): LocalStore {
       id: "task-seed-1",
       title: "Ship Q4 product roadmap summary email",
       notes: "Keep it to 5 bullet points for the engineering lead",
-      starter_step: "Open your email client, type the recipient address, and write 1 rough bullet point.",
-      estimated_minutes: 25,
       priority: "high",
       scheduled_for: today,
       status: "pending",
@@ -70,8 +68,6 @@ function createInitialSeedStore(): LocalStore {
       id: "task-seed-2",
       title: "Review Supabase & Resend webhook logs",
       notes: "Verify inbound reply domain DNS records",
-      starter_step: "Open the Resend dashboard tab and check the green Verified badge on your domain.",
-      estimated_minutes: 15,
       priority: "medium",
       scheduled_for: today,
       status: "pending",
@@ -80,14 +76,12 @@ function createInitialSeedStore(): LocalStore {
     },
     {
       id: "task-seed-3",
-      title: "20-minute walk outside without phone notifications",
-      notes: "Reset brain after lunch",
-      starter_step: "Put your shoes right next to your desk chair right now.",
-      estimated_minutes: 20,
+      title: "20-minute walk outside",
+      notes: "Reset after lunch",
       priority: "low",
       scheduled_for: today,
       status: "done",
-      source: "web",
+      source: "email_reply",
       created_at: nowIso,
       completed_at: nowIso,
     },
@@ -95,8 +89,6 @@ function createInitialSeedStore(): LocalStore {
       id: "task-seed-4",
       title: "Draft slide deck for Friday demo",
       notes: "Focus on the live email-reply workflow",
-      starter_step: "Create a blank presentation file named 'Friday Demo' and write the title slide only.",
-      estimated_minutes: 35,
       priority: "high",
       scheduled_for: tomorrow,
       status: "pending",
@@ -108,38 +100,8 @@ function createInitialSeedStore(): LocalStore {
   const seedBrief: DailyBrief = {
     id: "brief-seed-today",
     brief_date: today,
-    subject: `Your 3-Step Lazy-Proof Plan for ${today}`,
-    greeting:
-      "Good morning! You don't need motivation today — you just need to survive the first 2 minutes of your #1 task.",
-    frog_of_the_day: "Ship Q4 product roadmap summary email (25m) — knock this out before checking Slack.",
-    lazy_hack:
-      "Set a 5-minute timer and give yourself permission to quit when it rings. Once you write the first bullet point, momentum takes over.",
-    schedule_json: [
-      {
-        time_slot: "09:00 – 09:25",
-        task_title: "Ship Q4 product roadmap summary email",
-        duration_minutes: 25,
-        priority: "high",
-        starter_step: "Open your email client, type the recipient address, and write 1 rough bullet point.",
-        why_it_matters: "Clears your biggest mental weight before 9:30 AM.",
-      },
-      {
-        time_slot: "10:30 – 10:45",
-        task_title: "Review Supabase & Resend webhook logs",
-        duration_minutes: 15,
-        priority: "medium",
-        starter_step: "Open the Resend dashboard tab and check the green Verified badge on your domain.",
-        why_it_matters: "Ensures tonight's reply-to-plan loop runs hands-free.",
-      },
-      {
-        time_slot: "13:30 – 13:50",
-        task_title: "20-minute walk outside without phone notifications",
-        duration_minutes: 20,
-        priority: "low",
-        starter_step: "Put your shoes right next to your desk chair right now.",
-        why_it_matters: "Prevents the 3 PM energy crash.",
-      },
-    ],
+    subject: `Today's Tasks (${today})`,
+    greeting: "Good morning! Here is what you need to do today:",
     created_at: nowIso,
     updated_at: nowIso,
   };
@@ -208,7 +170,7 @@ export async function insertTasks(
   const rows = inputs.map((item) => ({
     title: item.title,
     notes: item.notes || null,
-    starter_step: item.starter_step,
+    starter_step: item.starter_step || "Start the first step.",
     estimated_minutes: item.estimated_minutes || 25,
     priority: item.priority || "medium",
     scheduled_for: scheduledFor,
@@ -232,6 +194,41 @@ export async function insertTasks(
   store.tasks.push(...created);
   writeLocalStore(store);
   return created;
+}
+
+export async function markTasksDoneByTitles(
+  dateStr: string,
+  completedTitles: string[]
+): Promise<Task[]> {
+  if (completedTitles.length === 0) return [];
+  const todayTasks = await getTasksForDate(dateStr);
+  const updatedTasks: Task[] = [];
+
+  for (const rawTitle of completedTitles) {
+    const target = rawTitle.toLowerCase().trim();
+    if (!target) continue;
+
+    // Fuzzy match against pending tasks for this date
+    const match = todayTasks.find((t) => {
+      if (t.status === "done") return false;
+      const titleLower = t.title.toLowerCase();
+      return (
+        titleLower.includes(target) ||
+        target.includes(titleLower) ||
+        target.split(/\s+/).filter((w) => w.length > 3).some((w) => titleLower.includes(w))
+      );
+    });
+
+    if (match) {
+      const updated = await updateTaskStatus(match.id, "done");
+      if (updated) {
+        match.status = "done";
+        updatedTasks.push(updated);
+      }
+    }
+  }
+
+  return updatedTasks;
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus): Promise<Task | null> {
@@ -334,9 +331,7 @@ export async function upsertMorningBrief(
       brief_date: dateStr,
       subject: plan.subject,
       greeting: plan.greeting,
-      frog_of_the_day: plan.frog_of_the_day,
-      lazy_hack: plan.lazy_hack,
-      schedule_json: plan.schedule,
+      schedule_json: plan.tasks,
       ...(morningEmailId ? { morning_email_id: morningEmailId, morning_sent_at: nowIso } : {}),
       updated_at: nowIso,
     };
@@ -357,9 +352,6 @@ export async function upsertMorningBrief(
     brief_date: dateStr,
     subject: plan.subject,
     greeting: plan.greeting,
-    frog_of_the_day: plan.frog_of_the_day,
-    lazy_hack: plan.lazy_hack,
-    schedule_json: plan.schedule,
     morning_email_id: morningEmailId ?? (existingIdx >= 0 ? store.daily_briefs[existingIdx].morning_email_id : null),
     morning_sent_at: morningEmailId ? nowIso : existingIdx >= 0 ? store.daily_briefs[existingIdx].morning_sent_at : null,
     evening_email_id: existingIdx >= 0 ? store.daily_briefs[existingIdx].evening_email_id : null,
@@ -409,9 +401,6 @@ export async function recordEveningEmailSent(dateStr: string, eveningEmailId?: s
       brief_date: dateStr,
       subject: null,
       greeting: null,
-      frog_of_the_day: null,
-      lazy_hack: null,
-      schedule_json: [],
       evening_email_id: eveningEmailId || "local-preview",
       evening_sent_at: nowIso,
       created_at: nowIso,
@@ -450,9 +439,6 @@ export async function recordEveningReply(dateStr: string, rawReplyText: string):
       brief_date: dateStr,
       subject: null,
       greeting: null,
-      frog_of_the_day: null,
-      lazy_hack: null,
-      schedule_json: [],
       raw_evening_reply: rawReplyText,
       created_at: nowIso,
       updated_at: nowIso,

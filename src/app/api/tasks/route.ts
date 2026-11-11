@@ -6,13 +6,14 @@ import {
   getTasksForDate,
   insertTasks,
   isSupabaseConfigured,
+  markTasksDoneByTitles,
   updateTaskStatus,
   upsertMorningBrief,
 } from "@/lib/db";
 import {
-  generateMorningActionPlan,
+  generateMorningPlan,
   isGeminiConfigured,
-  parseTasksFromBrainDump,
+  parseEmailReply,
 } from "@/lib/ai";
 import { isResendConfigured } from "@/lib/email";
 import { TaskPriority, TaskStatus } from "@/lib/types";
@@ -33,7 +34,7 @@ export async function GET() {
 
     let brief = existingBrief;
     if (!brief) {
-      const generatedPlan = await generateMorningActionPlan(todayTasks, today);
+      const generatedPlan = await generateMorningPlan(todayTasks, today);
       brief = await upsertMorningBrief(today, generatedPlan);
     }
 
@@ -60,63 +61,52 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const targetDay: "today" | "tomorrow" = body.targetDay === "today" ? "today" : "tomorrow";
-    const dateStr = targetDay === "today" ? getTodayDateStr() : getTomorrowDateStr();
+    const today = getTodayDateStr();
+    const tomorrow = getTomorrowDateStr();
 
-    // Mode A: Brain-dump / natural language input parsed by Gemini
-    if (typeof body.brainDump === "string" && body.brainDump.trim()) {
-      const parsed = await parseTasksFromBrainDump(body.brainDump.trim(), dateStr);
+    // Mode A: Natural language reply (Simulating what user replies via email)
+    if (typeof body.replyText === "string" && body.replyText.trim()) {
+      const todayTasks = await getTasksForDate(today);
+      const parsed = await parseEmailReply(body.replyText.trim(), todayTasks, tomorrow);
+
+      const completed = await markTasksDoneByTitles(today, parsed.completed_task_titles);
       const created = await insertTasks(
-        parsed.tasks,
-        dateStr,
+        parsed.tomorrow_tasks,
+        tomorrow,
         body.source === "email_reply" ? "email_reply" : "web"
       );
 
-      // If added to today, refresh today's morning plan
-      let updatedBrief = null;
-      if (targetDay === "today") {
-        const allToday = await getTasksForDate(dateStr);
-        const newPlan = await generateMorningActionPlan(allToday, dateStr);
-        updatedBrief = await upsertMorningBrief(dateStr, newPlan);
-      }
-
       return NextResponse.json({
         ok: true,
-        coachingNote: parsed.coaching_note,
-        tasks: created,
-        brief: updatedBrief,
+        summaryMessage: parsed.summary_message,
+        completedTasks: completed.map((t) => t.title),
+        tomorrowTasks: created,
       });
     }
 
-    // Mode B: Direct structured task creation
+    // Mode B: Direct single task creation
     if (typeof body.title === "string" && body.title.trim()) {
+      const targetDay = body.targetDay === "today" ? today : tomorrow;
       const priority: TaskPriority = ["high", "medium", "low"].includes(body.priority)
         ? body.priority
         : "medium";
-      const estimatedMinutes = Number(body.estimated_minutes) || 25;
-      const starterStep =
-        typeof body.starter_step === "string" && body.starter_step.trim()
-          ? body.starter_step.trim()
-          : `Spend 2 minutes opening the needed files for "${body.title.trim()}".`;
 
       const created = await insertTasks(
         [
           {
             title: body.title.trim(),
             notes: body.notes || undefined,
-            starter_step: starterStep,
-            estimated_minutes: estimatedMinutes,
             priority,
           },
         ],
-        dateStr,
+        targetDay,
         "web"
       );
 
       return NextResponse.json({ ok: true, tasks: created });
     }
 
-    return NextResponse.json({ ok: false, error: "Provide brainDump or title" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Provide replyText or title" }, { status: 400 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create tasks";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
