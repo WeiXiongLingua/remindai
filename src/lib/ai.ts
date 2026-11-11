@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import * as z from "zod";
 import { MorningPlan, ParsedTaskBundle, Task } from "./types";
 
-const GEMINI_MODEL = "gemini-3.8-flash";
+const GEMINI_MODEL = "gemini-3.5-flash";
 
 export function isGeminiConfigured(): boolean {
   const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";

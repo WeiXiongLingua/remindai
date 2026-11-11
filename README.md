@@ -6,7 +6,7 @@ RemindAI is a personal AI agent built with **Next.js (App Router)**, **Google Ge
 
 1. **Morning Action Plan (08:00 AM Cron — `/api/cron/morning`)**:
    - Automatically rolls over any unfinished tasks from yesterday.
-   - Calls **Gemini 3.8 Flash** to pick your **#1 Frog of the Day**, design a time-blocked schedule, and attach a frictionless **2-Minute Lazy Starter Step** to each task.
+   - Calls **Gemini 3.5 Flash** to pick your **#1 Frog of the Day**, design a time-blocked schedule, and attach a frictionless **2-Minute Lazy Starter Step** to each task.
    - Sends the HTML dispatch email via **Resend** and stores the brief in **Supabase**.
 2. **Evening Check-in (08:00 PM Cron — `/api/cron/evening`)**:
    - Summarizes how many tasks you finished today and asks: *"What do you need to get done tomorrow?"*
