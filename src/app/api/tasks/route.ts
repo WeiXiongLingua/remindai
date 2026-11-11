@@ -17,6 +17,9 @@ import {
 import { isResendConfigured } from "@/lib/email";
 import { TaskPriority, TaskStatus } from "@/lib/types";
 
+// Allow time for Gemini model fallbacks (Vercel function max duration, seconds).
+export const maxDuration = 60;
+
 export async function GET() {
   try {
     const today = getTodayDateStr();

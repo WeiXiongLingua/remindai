@@ -8,6 +8,9 @@ import {
 import { generateMorningActionPlan } from "@/lib/ai";
 import { sendMorningPlanEmail } from "@/lib/email";
 
+// Allow time for Gemini model fallbacks (Vercel function max duration, seconds).
+export const maxDuration = 60;
+
 function isAuthorized(req: NextRequest): boolean {
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret || cronSecret.includes("generate_a_random_secret")) {

@@ -2,7 +2,21 @@ import { GoogleGenAI } from "@google/genai";
 import * as z from "zod";
 import { MorningPlan, ParsedTaskBundle, Task } from "./types";
 
-const GEMINI_MODEL = "gemini-3.5-flash";
+// Models are tried in order. If one is overloaded (503), slow, or failing,
+// the next one is used. Override the first choice with GEMINI_MODEL in env.
+const GEMINI_MODELS = Array.from(
+  new Set(
+    [
+      process.env.GEMINI_MODEL,
+      "gemini-3.5-flash-lite",
+      "gemini-3.5-flash",
+      "gemini-3.8-flash",
+    ].filter((m): m is string => Boolean(m))
+  )
+);
+
+// Per-model time limit, so a hanging model can't eat the whole Vercel function budget.
+const PER_MODEL_TIMEOUT_MS = 15_000;
 
 export function isGeminiConfigured(): boolean {
   const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
@@ -14,6 +28,60 @@ function getGenAIClient(): GoogleGenAI | null {
   return new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
   });
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
+/**
+ * Calls Gemini with structured JSON output, falling back through GEMINI_MODELS.
+ * Returns the validated result, or null if every model failed.
+ */
+async function generateJsonWithFallback<T>(
+  client: GoogleGenAI,
+  params: { system_instruction: string; input: string; schema: object },
+  validate: (raw: unknown) => T
+): Promise<T | null> {
+  for (const model of GEMINI_MODELS) {
+    try {
+      const interaction = await withTimeout(
+        client.interactions.create({
+          model,
+          system_instruction: params.system_instruction,
+          input: params.input,
+          response_format: {
+            type: "text",
+            mime_type: "application/json",
+            schema: params.schema,
+          },
+        }),
+        PER_MODEL_TIMEOUT_MS,
+        model
+      );
+
+      if (interaction.output_text) {
+        return validate(JSON.parse(interaction.output_text));
+      }
+      console.warn(`Gemini ${model} returned no text, trying next model.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Gemini ${model} failed (${message.slice(0, 160)}), trying next model.`);
+    }
+  }
+  return null;
 }
 
 // ============================================================
@@ -84,28 +152,20 @@ export async function parseTasksFromBrainDump(
   const client = getGenAIClient();
 
   if (client) {
-    try {
-      const interaction = await client.interactions.create({
-        model: GEMINI_MODEL,
+    const parsed = await generateJsonWithFallback(
+      client,
+      {
         system_instruction:
           "You are RemindAI, an anti-procrastination executive function coach for someone who feels too lazy to start tasks. " +
           "Extract concrete tasks from their casual email reply or brain dump. " +
           "If a task sounds huge or vague, break it into a realistic 15-45 minute chunk and invent a frictionless 'starter_step' that takes under 2 minutes.",
         input: `Target date: ${targetDateStr}\n\nUser message:\n"""\n${rawText}\n"""`,
-        response_format: {
-          type: "text",
-          mime_type: "application/json",
-          schema: parsedTasksJsonSchema,
-        },
-      });
-
-      if (interaction.output_text) {
-        const parsed = parsedTasksValidator.parse(JSON.parse(interaction.output_text));
-        return parsed;
-      }
-    } catch (error) {
-      console.error("Gemini parseTasksFromBrainDump error, falling back to heuristic parser:", error);
-    }
+        schema: parsedTasksJsonSchema,
+      },
+      (raw) => parsedTasksValidator.parse(raw)
+    );
+    if (parsed) return parsed;
+    console.error("All Gemini models failed for parseTasksFromBrainDump, using heuristic parser.");
   }
 
   // Fallback parser when GEMINI_API_KEY is not yet configured
@@ -233,34 +293,27 @@ export async function generateMorningActionPlan(
   const client = getGenAIClient();
 
   if (client && pendingTasks.length > 0) {
-    try {
-      const taskSummary = pendingTasks
-        .map(
-          (t, i) =>
-            `${i + 1}. [${t.priority.toUpperCase()}] ${t.title} (~${t.estimated_minutes}m) | Starter step: ${t.starter_step}${t.notes ? ` | Notes: ${t.notes}` : ""}`
-        )
-        .join("\n");
+    const taskSummary = pendingTasks
+      .map(
+        (t, i) =>
+          `${i + 1}. [${t.priority.toUpperCase()}] ${t.title} (~${t.estimated_minutes}m) | Starter step: ${t.starter_step}${t.notes ? ` | Notes: ${t.notes}` : ""}`
+      )
+      .join("\n");
 
-      const interaction = await client.interactions.create({
-        model: GEMINI_MODEL,
+    const plan = await generateJsonWithFallback(
+      client,
+      {
         system_instruction:
           "You are RemindAI, an empathetic, practical daily productivity coach for a smart person who struggles with task initiation and procrastination. " +
           "Turn their task list into a calm, realistic, time-blocked morning gameplan. " +
           "Pick the single most important 'Frog of the Day' first, space out the time slots with breathing room starting around 09:00, and emphasize the 2-minute starter step so they never feel overwhelmed.",
         input: `User Name: ${userName}\nDate: ${dateStr}\nToday's Tasks:\n${taskSummary}`,
-        response_format: {
-          type: "text",
-          mime_type: "application/json",
-          schema: morningPlanJsonSchema,
-        },
-      });
-
-      if (interaction.output_text) {
-        return morningPlanValidator.parse(JSON.parse(interaction.output_text));
-      }
-    } catch (error) {
-      console.error("Gemini generateMorningActionPlan error, using fallback plan:", error);
-    }
+        schema: morningPlanJsonSchema,
+      },
+      (raw) => morningPlanValidator.parse(raw)
+    );
+    if (plan) return plan;
+    console.error("All Gemini models failed for generateMorningActionPlan, using fallback plan.");
   }
 
   // Fallback deterministic plan

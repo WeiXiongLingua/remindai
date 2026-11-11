@@ -4,6 +4,9 @@ import { parseTasksFromBrainDump } from "@/lib/ai";
 import { insertTasks, recordEveningReply } from "@/lib/db";
 import { sendReplyConfirmationEmail } from "@/lib/email";
 
+// Allow time for Gemini model fallbacks (Vercel function max duration, seconds).
+export const maxDuration = 60;
+
 /**
  * Strips quoted email history ("On Wed, Nov 11... wrote:", "> quoted lines")
  * so Gemini only parses the user's fresh reply.
