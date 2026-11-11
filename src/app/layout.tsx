@@ -1,30 +1,10 @@
 import type { Metadata } from "next";
-import { Newsreader, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-
-const newsreader = Newsreader({
-  subsets: ["latin"],
-  variable: "--font-display",
-  style: ["normal", "italic"],
-  weight: ["500", "600"],
-});
-
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-sans",
-  weight: ["400", "500", "600", "700"],
-});
-
-const jetbrains = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-mono",
-  weight: ["400", "500", "600"],
-});
 
 export const metadata: Metadata = {
   title: "RemindAI — Daily Anti-Procrastination Email Dispatcher",
   description:
-    "Morning step-by-step action plan emails and evening check-in replies powered by Gemini 3.8 Flash, Resend, Supabase, and Vercel Cron.",
+    "Morning step-by-step action plan emails and evening check-in replies powered by Gemini, Resend, Supabase, and Vercel Cron.",
 };
 
 export default function RootLayout({
@@ -33,10 +13,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${newsreader.variable} ${jakarta.variable} ${jetbrains.variable}`}
-    >
+    <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link
+          href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,500;0,6..72,600;1,6..72,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body>{children}</body>
     </html>
   );

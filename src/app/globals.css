@@ -1,4 +1,7 @@
 :root {
+  --font-display: "Newsreader", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --bg-desk: #F8F9FA;
   --surface-sheet: #FFFFFF;
   --surface-subtle: #F1F4F9;
