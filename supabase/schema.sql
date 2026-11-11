@@ -43,7 +43,13 @@ create table if not exists public.daily_briefs (
 
 create index if not exists idx_daily_briefs_date on public.daily_briefs (brief_date);
 
--- 3. Row Level Security (RLS) Policies (allows publishable key access for personal single-user mode)
+-- 3. Table privileges (newer Supabase projects don't auto-grant these on new tables;
+--    without them you get "permission denied for table tasks")
+grant usage on schema public to anon, authenticated, service_role;
+grant select, insert, update, delete on public.tasks to anon, authenticated, service_role;
+grant select, insert, update, delete on public.daily_briefs to anon, authenticated, service_role;
+
+-- 4. Row Level Security (RLS) Policies (allows publishable key access for personal single-user mode)
 alter table public.tasks enable row level security;
 alter table public.daily_briefs enable row level security;
 
