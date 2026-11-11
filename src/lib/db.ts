@@ -5,7 +5,12 @@ import crypto from "node:crypto";
 import { DailyBrief, MorningPlan, ParsedTaskInput, Task, TaskSource, TaskStatus } from "./types";
 import { getTodayDateStr, getTomorrowDateStr } from "./dates";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+// Normalize the project URL: the client adds /rest/v1 itself, so strip it
+// (and any trailing slash) if it was pasted from the API docs.
+const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "")
+  .trim()
+  .replace(/\/+$/, "")
+  .replace(/\/rest\/v1$/, "");
 const supabaseKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
