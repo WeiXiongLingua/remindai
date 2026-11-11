@@ -174,8 +174,9 @@ export default function RemindAIDeskPage() {
       const json = await res.json();
       if (json.ok && json.email) {
         await fetchDashboard();
-        const modeLabel =
-          json.email.mode === "resend_live"
+        const modeLabel = json.email.error
+          ? `Resend rejected the email: ${json.email.error}`
+          : json.email.mode === "resend_live"
             ? `Dispatched via Resend to ${json.email.to}`
             : `Generated email preview (set RESEND_API_KEY in .env.local to send live emails)`;
         setStatusMessage(modeLabel);
