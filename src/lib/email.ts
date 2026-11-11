@@ -190,7 +190,7 @@ export async function sendEveningAskEmail(params: {
     </div>
 
     <p style="font-size: 13px; color: #6B7280; line-height: 1.5; margin: 0;">
-      RemindAI will parse your reply, save tomorrow's tasks, and send you a reminder email tomorrow morning at 8:00 AM!
+      RemindAI will parse your reply, save tomorrow's tasks, and send you a reminder email tomorrow morning at 5:00 AM!
     </p>
   </div>
 </body>
@@ -295,7 +295,7 @@ export async function sendReplyConfirmationEmail(params: {
     ${tomorrowHtml}
 
     <p style="font-size: 13px; color: #6B7280; margin: 16px 0 0 0; border-top: 1px solid #E5E7EB; padding-top: 12px;">
-      I will send your morning reminder tomorrow at 8:00 AM!
+      I will send your morning reminder tomorrow at 5:00 AM!
     </p>
   </div>
 </body>

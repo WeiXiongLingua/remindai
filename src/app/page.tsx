@@ -193,7 +193,7 @@ export default function RemindAIDeskPage() {
         <div>
           <h1 className="brand-title">RemindAI Agent</h1>
           <p className="brand-subtitle">
-            Simple daily task reminders via email. Every morning at 8:00 AM you receive today&apos;s tasks. Every evening at 8:00 PM you receive a check-in — just reply with what you finished and what you need for tomorrow!
+            Simple daily task reminders via email. Every morning at 5:00 AM you receive today&apos;s tasks. Every evening at 10:00 PM you receive a check-in — just reply with what you finished and what you need for tomorrow!
           </p>
         </div>
 
@@ -247,7 +247,7 @@ export default function RemindAIDeskPage() {
             {data?.integrations.supabase ? "Connected" : "Local Store"}
           </span>
         </div>
-        <span className="mono-tag">EMAIL LOOP: 08:00 AM &middot; 08:00 PM</span>
+        <span className="mono-tag">EMAIL LOOP: 05:00 AM &middot; 10:00 PM</span>
       </aside>
 
       {/* Live Feedback Toast */}

@@ -230,7 +230,7 @@ export async function generateMorningPlan(
       greeting: `Good morning ${userName}! You don't have any tasks scheduled for today.`,
       tasks: [],
       reminder_footer:
-        "Tonight at 8:00 PM you'll receive a check-in email where you can reply with what you need to do tomorrow.",
+        "Tonight at 10:00 PM you'll receive a check-in email where you can reply with what you need to do tomorrow.",
     };
   }
 
@@ -243,6 +243,6 @@ export async function generateMorningPlan(
       priority: t.priority,
     })),
     reminder_footer:
-      "Tonight at 8:00 PM, you'll receive an evening check-in email. Simply reply to it with what you finished and what you need to do tomorrow!",
+      "Tonight at 10:00 PM, you'll receive an evening check-in email. Simply reply to it with what you finished and what you need to do tomorrow!",
   };
 }
